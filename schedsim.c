@@ -26,33 +26,48 @@ void findWaitingTimeRR(ProcessType plist[], int n,int quantum)
    */  
   int *rem_bt = malloc(n * sizeof(int));
   for(int i = 0; i<n; i++){
-  rem_bt[i] = plist[i].bt;
+    rem_bt[i] = plist[i].bt;
+    plist[i].wt = 0;
   }
 
-  for(int i = 0; i<n; i++){
-  plist[i].wt = 0;
-  }
 
   int current_time = 0;
   int completed = 0;
   
   while (completed < n){
+    int did_run = 0; //checks if any process ran in the current pass
+
     for (int i = 0; i < n; i++){
+      //check if process is not completed
       if (rem_bt[i] == 0){
         continue;
       }
-      else if (rem_bt[i] > quantum){
+
+      //check if the process has arrived
+      if (plist[i].art > current_time){
+        continue;
+      }
+
+      did_run = 1;
+
+      if (rem_bt[i] > quantum){
+        //run process for the full quantum
         current_time += quantum;
         rem_bt[i] -= quantum;
       }
       else{
+        //run for the remianing burst time
         current_time += rem_bt[i];
-        plist[i].wt = current_time - plist[i].bt;
+        plist[i].wt = current_time - plist[i].bt - plist[i].art;
         rem_bt[i] = 0;
         completed++;
       }
     }
+    if (did_run == 0 && completed < n){
+      current_time++;
+    }
   }
+  free(rem_bt);
    
 } 
 
@@ -71,37 +86,52 @@ void findWaitingTimeSJF(ProcessType plist[], int n)
          - Increment time lap by one.
  
      */
+    //Array holds the remaining burst time
+    int *rem_bt = (int *)malloc(n * sizeof(int));
+    for (int i = 0; i<n; i++){
+      rem_bt[i] = plist[i].bt;
+    }
 
-    int proc_completion = 0;
     int current_time = 0;
-    ProcessType *sjf_plist = malloc(n * sizeof(ProcessType));
-    memcpy(sjf_plist, plist, n * sizeof(ProcessType));
+    int completed = 0;
+    int min_bt;
+    int shortest_proc_idx;
+    int finish_time;
 
-    while (proc_completion < n){
-      int min_proc = -1;
-      int min_time = INT_MAX;
+    while (completed < n){
+      //Find process with the minimum remianing time
+      min_bt = INT_MAX;
+      shortest_proc_idx = -1;
+
       for (int i = 0; i<n; i++){
-        if (sjf_plist[i].art <= current_time && 0 < sjf_plist[i].bt && sjf_plist[i].bt < min_time){
-          min_proc = i;
-          min_time = sjf_plist[min_proc].bt;
+        if (plist[i].art <= current_time && rem_bt[i] > 0 && rem_bt[i] < min_bt){
+          min_bt = rem_bt[i];
+          shortest_proc_idx = i;
         }
       }
 
-      if (min_proc == -1){
+      //handle idle time
+      if (shortest_proc_idx == -1){
         current_time++;
         continue;
       }
 
-      sjf_plist[min_proc].bt -= 1;
-      current_time ++;
-      if (sjf_plist[min_proc].bt == 0){
-        proc_completion++;
-        int comp_time = current_time;
-        plist[min_proc].wt = comp_time - plist[min_proc].art - plist[min_proc].bt;
-      }
-      
-    }
+      rem_bt[shortest_proc_idx]--;
+      current_time++;
 
+      if (rem_bt[shortest_proc_idx] == 0){
+        completed++;
+        finish_time = current_time;
+
+        //calculate waiting time
+        plist[shortest_proc_idx].wt = finish_time - plist[shortest_proc_idx].bt - plist[shortest_proc_idx].art;
+
+        if (plist[shortest_proc_idx].wt < 0){
+          plist[shortest_proc_idx].wt = 0;
+        }
+      }
+    }
+    free(rem_bt);
     
 } 
 
@@ -109,12 +139,26 @@ void findWaitingTimeSJF(ProcessType plist[], int n)
 // processes 
 void findWaitingTime(ProcessType plist[], int n)
 { 
-    // waiting time for first process is 0, or the arrival time if not 
-    plist[0].wt = 0 +  plist[0].art; 
-  
-    // calculating waiting time 
-    for (int  i = 1; i < n ; i++ ) 
-        plist[i].wt =  plist[i-1].bt + plist[i-1].wt; 
+  if (n == 0) return;
+
+  //completion time of the previous process
+  int prev_comp_time = 0; 
+
+  for (int  i = 0; i < n ; i++ ) {
+    //calculate the start time
+    int start_time = prev_comp_time;
+
+    //checks if CPU is idle
+    if (plist[i].art > prev_comp_time){
+      start_time = plist[i].art;
+    }
+    
+    //calculate the waiting time
+    plist[i].wt = start_time - plist[i].art;
+
+    //update the completion time for the next process 
+    prev_comp_time = start_time + plist[i].bt;
+  }
 } 
   
 // Function to calculate turn around time 
@@ -135,9 +179,15 @@ int my_comparer(const void *this, const void *that)
      */ 
     ProcessType *p1 = (ProcessType*) this;
     ProcessType *p2 = (ProcessType*) that;
-  
-    return p2->pri - p1->pri;
-} 
+
+    if (p1->pri != p2->pri){
+      return p2->pri - p1->pri;
+    } 
+
+    //tie-breaker if priorities are the start_time
+    return p2->art - p1->art;
+}
+    
 
 //Function to calculate average time 
 void findavgTimeFCFS( ProcessType plist[], int n) 
